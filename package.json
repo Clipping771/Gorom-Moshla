@@ -1,0 +1,147 @@
+{
+  "name": "gorom-moshla",
+  "displayName": "Gorom Moshla",
+  "description": "Enterprise-grade deterministic AI coding assistant",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "publisher": "kaush",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example/gorom-moshla"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "gorom-moshla.start",
+        "title": "Gorom Moshla: Open Sidebar"
+      },
+      {
+        "command": "gorom-moshla.openFloat",
+        "title": "Gorom Moshla: Open Floating Chat (Beside)",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "gorom-moshla.openFloatRight",
+        "title": "Gorom Moshla: Open Floating Chat (Right Column)",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "gorom-moshla.fixTerminalError",
+        "title": "Gorom Moshla: Fix Terminal Error",
+        "icon": "$(tools)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "gorom-moshla.openFloat",
+        "key": "ctrl+shift+g",
+        "mac": "cmd+shift+g",
+        "when": "!terminalFocus"
+      },
+      {
+        "command": "gorom-moshla.fixTerminalError",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "terminalFocus"
+      }
+    ],
+    "menus": {
+      "terminal/context": [
+        {
+          "command": "gorom-moshla.fixTerminalError",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "gorom-moshla.openFloat",
+          "group": "navigation",
+          "when": "editorIsOpen"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "goromMoshlaView",
+          "title": "Gorom Moshla",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "goromMoshlaView": [
+        {
+          "type": "webview",
+          "id": "goromMoshla.chatView",
+          "name": "Chat",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Gorom Moshla",
+      "properties": {
+        "goromMoshla.aiProvider": {
+          "type": "string",
+          "default": "groq",
+          "enum": [
+            "groq",
+            "gemini",
+            "openrouter",
+            "huggingface"
+          ],
+          "description": "Select the free AI API provider"
+        },
+        "goromMoshla.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for the selected provider (stored securely)"
+        },
+        "goromMoshla.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model ID to use for the selected provider. Leave empty to use the default model. Set automatically when you pick a model from the sidebar dropdown."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "@typescript-eslint/eslint-plugin": "^7.0.2",
+    "@typescript-eslint/parser": "^7.0.2",
+    "eslint": "^8.56.0",
+    "esbuild": "^0.20.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.3.3",
+    "@vscode/test-cli": "^0.0.6",
+    "@vscode/test-electron": "^2.3.9"
+  },
+  "dependencies": {
+    "zod": "^3.22.4"
+  }
+}
