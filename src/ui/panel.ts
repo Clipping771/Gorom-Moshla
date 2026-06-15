@@ -1,15 +1,12 @@
 import * as vscode from 'vscode';
-import { globalEventBus } from '../core/eventBus';
-import { Orchestrator } from '../core/orchestrator';
-import { fetchModelsForProvider } from '../ai/providerFactory';
+import { socketClient } from '../core/socketClient';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'goromMoshla.chatView';
   private _view?: vscode.WebviewView;
 
   constructor(
-    private readonly _extensionUri: vscode.Uri,
-    private readonly _orchestrator: Orchestrator
+    private readonly _extensionUri: vscode.Uri
   ) { }
 
   public resolveWebviewView(
@@ -21,21 +18,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = this._getHtml();
 
-    // Extension → Webview events
-    globalEventBus.on('onStatePhaseChange', (p) => this._post({ type: 'phase', value: p.newPhase }));
-    globalEventBus.on('onAIResponse', (p) => this._post({ type: 'response', value: p.rawOutput }));
-    globalEventBus.on('onAIStreamChunk', (p) => this._post({ type: 'chunk', value: p.chunk }));
-    globalEventBus.on('onPlanReady', (p) => this._post({ type: 'planReady', title: p.title, steps: p.steps }));
-    globalEventBus.on('onStepUpdate', (p) => this._post({ type: 'stepUpdate', index: p.index, status: p.status, message: p.message, result: p.result, elapsed: p.elapsed }));
-    globalEventBus.on('onWaitingForApproval', () => this._post({ type: 'waitingForApproval' }));
-    globalEventBus.on('onPlanRejected', () => this._post({ type: 'planRejected' }));
-    // New Cursor-style events
-    globalEventBus.on('onThinkingPhase', (p) => this._post({ type: 'thinkingPhase', phase: p.phase, detail: p.detail }));
-    globalEventBus.on('onContextExploring', (p) => this._post({ type: 'contextExploring', files: p.files, folders: p.folders, entries: p.entries }));
-    globalEventBus.on('onFilesChanged', (p) => this._post({ type: 'filesChanged', files: p.files }));
-    globalEventBus.on('onThoughts', (p) => this._post({ type: 'thoughts', value: p.thoughts }));
+    // Socket -> Webview UI
+    socketClient.onMessage((msg) => {
+      // Map server socket events to webview UI events
+      if (msg.type === 'plan') {
+        this._post({ type: 'thinkingPhase', phase: 'Planning', detail: msg.data });
+      } else if (msg.type === 'tool') {
+        this._post({ type: 'thinkingPhase', phase: 'Executing', detail: msg.data });
+      } else if (msg.type === 'edit') {
+        this._post({ type: 'thinkingPhase', phase: 'Executing', detail: `Edited ${msg.data.file}` });
+      } else if (msg.type === 'error') {
+        this._post({ type: 'error', value: msg.data });
+      } else if (msg.type === 'done') {
+        this._post({ type: 'response', value: msg.data });
+        this._post({ type: 'cleared' }); // stop loading indicators
+      } else if (msg.type === 'fix') {
+        this._post({ type: 'thinkingPhase', phase: 'Self-Healing', detail: msg.data });
+      }
+    });
 
-    // Webview → Extension messages
+    // Webview -> Socket
     webviewView.webview.onDidReceiveMessage(async (msg) => {
       switch (msg.type) {
 
@@ -43,18 +45,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           this._post({ type: 'userMessage', text: msg.text });
           this._post({ type: 'thinking' });
           try {
-            await this._orchestrator.run(msg.text);
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || process.cwd();
+            socketClient.sendTask(msg.text, workspaceRoot);
           } catch (err: any) {
             this._post({ type: 'error', value: String(err?.message || err) });
           }
           break;
 
         case 'approvePlan':
-          this._orchestrator.approvePlan();
-          break;
-
         case 'rejectPlan':
-          this._orchestrator.rejectPlan();
+          // Optional: send approval commands to socket if implemented in backend
           break;
 
         case 'setProvider':
@@ -64,20 +64,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         case 'setApiKey': {
           await vscode.workspace.getConfiguration('goromMoshla').update('apiKey', msg.key, vscode.ConfigurationTarget.Global);
-          // Use the provider sent from the webview directly (not from config which may lag)
-          const prov = msg.provider || vscode.workspace.getConfiguration('goromMoshla').get<string>('aiProvider') || 'groq';
-          this._post({ type: 'modelsLoading' });
-          const r1 = await fetchModelsForProvider(prov, msg.key);
-          this._post({ type: 'modelsLoaded', models: r1.models, fetchError: r1.error });
           break;
         }
 
         case 'fetchModels': {
-          const apiKey = vscode.workspace.getConfiguration('goromMoshla').get<string>('apiKey') || '';
-          if (!apiKey) { this._post({ type: 'modelsLoaded', models: [], fetchError: 'No API key set' }); return; }
-          this._post({ type: 'modelsLoading' });
-          const r2 = await fetchModelsForProvider(msg.provider, apiKey);
-          this._post({ type: 'modelsLoaded', models: r2.models, fetchError: r2.error });
+          // Hardcoded or mocked for UI since the brain runs externally
+          this._post({ type: 'modelsLoaded', models: [{id: 'gpt-4o', label: 'OpenAI GPT-4o'}], fetchError: null });
           break;
         }
 
@@ -86,7 +78,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
 
         case 'clearChat':
-          this._orchestrator.clearHistory();
           this._post({ type: 'cleared' });
           break;
 
@@ -110,6 +101,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _post(data: object) {
     this._view?.webview.postMessage(data);
   }
+
 
   /** Returns the markdown renderer JS as a string to be injected into the webview HTML. */
   private static _markdownRendererJs(): string {

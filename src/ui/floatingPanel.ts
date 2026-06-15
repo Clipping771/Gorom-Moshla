@@ -1,8 +1,6 @@
 import * as vscode from 'vscode';
-import { globalEventBus } from '../core/eventBus';
-import { Orchestrator } from '../core/orchestrator';
-import { fetchModelsForProvider } from '../ai/providerFactory';
 import { SidebarProvider } from './panel';
+import { socketClient } from '../core/socketClient';
 
 /**
  * Floating / detachable chat panel.
@@ -18,7 +16,6 @@ export class FloatingPanel {
 
     private constructor(
         private readonly _extensionUri: vscode.Uri,
-        private readonly _orchestrator: Orchestrator,
         column: vscode.ViewColumn
     ) {
         this._panel = vscode.window.createWebviewPanel(
@@ -45,14 +42,13 @@ export class FloatingPanel {
     /** Open or reveal the floating panel */
     public static open(
         extensionUri: vscode.Uri,
-        orchestrator: Orchestrator,
         column: vscode.ViewColumn = vscode.ViewColumn.Beside
     ): FloatingPanel {
         if (FloatingPanel._instance) {
             FloatingPanel._instance._panel.reveal(column);
             return FloatingPanel._instance;
         }
-        FloatingPanel._instance = new FloatingPanel(extensionUri, orchestrator, column);
+        FloatingPanel._instance = new FloatingPanel(extensionUri, column);
         return FloatingPanel._instance;
     }
 
@@ -65,17 +61,25 @@ export class FloatingPanel {
     }
 
     private _registerListeners() {
-        // Extension → Webview
-        const eb = globalEventBus;
-        eb.on('onStatePhaseChange', (p) => this._post({ type: 'phase', value: p.newPhase }));
-        eb.on('onAIResponse', (p) => this._post({ type: 'response', value: p.rawOutput }));
-        eb.on('onAIStreamChunk', (p) => this._post({ type: 'chunk', value: p.chunk }));
-        eb.on('onPlanReady', (p) => this._post({ type: 'planReady', title: p.title, steps: p.steps }));
-        eb.on('onStepUpdate', (p) => this._post({ type: 'stepUpdate', index: p.index, status: p.status, message: p.message }));
-        eb.on('onWaitingForApproval', () => this._post({ type: 'waitingForApproval' }));
-        eb.on('onPlanRejected', () => this._post({ type: 'planRejected' }));
+        // Socket -> Webview UI
+        socketClient.onMessage((msg) => {
+            if (msg.type === 'plan') {
+                this._post({ type: 'thinkingPhase', phase: 'Planning', detail: msg.data });
+            } else if (msg.type === 'tool') {
+                this._post({ type: 'thinkingPhase', phase: 'Executing', detail: msg.data });
+            } else if (msg.type === 'edit') {
+                this._post({ type: 'thinkingPhase', phase: 'Executing', detail: `Edited ${msg.data.file}` });
+            } else if (msg.type === 'error') {
+                this._post({ type: 'error', value: msg.data });
+            } else if (msg.type === 'done') {
+                this._post({ type: 'response', value: msg.data });
+                this._post({ type: 'cleared' });
+            } else if (msg.type === 'fix') {
+                this._post({ type: 'thinkingPhase', phase: 'Self-Healing', detail: msg.data });
+            }
+        });
 
-        // Webview → Extension
+        // Webview → Socket
         this._panel.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.type) {
 
@@ -83,18 +87,15 @@ export class FloatingPanel {
                     this._post({ type: 'userMessage', text: msg.text });
                     this._post({ type: 'thinking' });
                     try {
-                        await this._orchestrator.run(msg.text);
+                        const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || process.cwd();
+                        socketClient.sendTask(msg.text, workspaceRoot);
                     } catch (err: any) {
                         this._post({ type: 'error', value: String(err?.message || err) });
                     }
                     break;
 
                 case 'approvePlan':
-                    this._orchestrator.approvePlan();
-                    break;
-
                 case 'rejectPlan':
-                    this._orchestrator.rejectPlan();
                     break;
 
                 case 'setProvider':
@@ -104,19 +105,11 @@ export class FloatingPanel {
 
                 case 'setApiKey': {
                     await vscode.workspace.getConfiguration('goromMoshla').update('apiKey', msg.key, vscode.ConfigurationTarget.Global);
-                    const prov = vscode.workspace.getConfiguration('goromMoshla').get<string>('aiProvider') || 'groq';
-                    this._post({ type: 'modelsLoading' });
-                    const r = await fetchModelsForProvider(prov, msg.key);
-                    this._post({ type: 'modelsLoaded', models: r.models, fetchError: r.error });
                     break;
                 }
 
                 case 'fetchModels': {
-                    const key = vscode.workspace.getConfiguration('goromMoshla').get<string>('apiKey') || '';
-                    if (!key) { this._post({ type: 'modelsLoaded', models: [], fetchError: 'No API key' }); return; }
-                    this._post({ type: 'modelsLoading' });
-                    const r = await fetchModelsForProvider(msg.provider, key);
-                    this._post({ type: 'modelsLoaded', models: r.models, fetchError: r.error });
+                    this._post({ type: 'modelsLoaded', models: [{id: 'gpt-4o', label: 'OpenAI GPT-4o'}], fetchError: null });
                     break;
                 }
 
@@ -125,7 +118,6 @@ export class FloatingPanel {
                     break;
 
                 case 'clearChat':
-                    this._orchestrator.clearHistory();
                     this._post({ type: 'cleared' });
                     break;
 

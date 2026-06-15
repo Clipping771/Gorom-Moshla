@@ -1,28 +1,20 @@
 import * as vscode from 'vscode';
-import { Orchestrator } from './core/orchestrator';
 import { SidebarProvider } from './ui/panel';
 import { FloatingPanel } from './ui/floatingPanel';
+import { socketClient } from './core/socketClient';
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log('Gorom Moshla is active');
+  console.log('Gorom Moshla is active - Connecting to Runtime...');
 
-  let workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
+  // Initialize Socket Connection
+  socketClient.connect();
 
-  const orchestrator = new Orchestrator(workspaceRoot);
-  const sidebarProvider = new SidebarProvider(context.extensionUri, orchestrator);
+  const sidebarProvider = new SidebarProvider(context.extensionUri);
 
   // ── Sidebar (activity bar) ──────────────────────────────────────
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, sidebarProvider, {
       webviewOptions: { retainContextWhenHidden: true }
-    })
-  );
-
-  // ── Workspace root sync ─────────────────────────────────────────
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeWorkspaceFolders(() => {
-      workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
-      orchestrator.updateWorkspaceRoot(workspaceRoot);
     })
   );
 
@@ -36,14 +28,14 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Command: open/toggle floating panel ─────────────────────────
   context.subscriptions.push(
     vscode.commands.registerCommand('gorom-moshla.openFloat', () => {
-      FloatingPanel.open(context.extensionUri, orchestrator, vscode.ViewColumn.Beside);
+      FloatingPanel.open(context.extensionUri, vscode.ViewColumn.Beside);
     })
   );
 
   // ── Command: open floating panel on the right (column 2) ────────
   context.subscriptions.push(
     vscode.commands.registerCommand('gorom-moshla.openFloatRight', () => {
-      FloatingPanel.open(context.extensionUri, orchestrator, vscode.ViewColumn.Two);
+      FloatingPanel.open(context.extensionUri, vscode.ViewColumn.Two);
     })
   );
 
@@ -69,13 +61,16 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
+      
       const activeFile = vscode.window.activeTextEditor?.document.uri.fsPath || 'None';
       const prompt = `Analyze and fix this terminal output/error:\n\n\`\`\`\n${text.substring(0, 4000)}\n\`\`\`\n\nActive File: ${activeFile}\nUse tools like listDir, grepSearch to find the root cause and editFile to fix it.`;
       
       vscode.commands.executeCommand('goromMoshla.chatView.focus');
-      orchestrator.run(prompt);
+      socketClient.sendTask(prompt, workspaceRoot);
     })
   );
 }
 
 export function deactivate() { }
+
