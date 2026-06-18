@@ -110,6 +110,33 @@
           "type": "string",
           "default": "",
           "description": "Model ID to use for the selected provider. Leave empty to use the default model. Set automatically when you pick a model from the sidebar dropdown."
+        },
+        "goromMoshla.maxTokens": {
+          "type": "number",
+          "default": 4096,
+          "description": "Maximum number of tokens to generate per response."
+        },
+        "goromMoshla.contextWindow": {
+          "type": "number",
+          "default": 128000,
+          "description": "Maximum context window size (in tokens) to use for the AI model."
+        },
+        "goromMoshla.temperature": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Temperature for AI model generations. 0 is most deterministic, 2 is most creative."
+        },
+        "goromMoshla.maxLoops": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum number of times the agent can automatically loop."
+        },
+        "goromMoshla.maxIterations": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum number of steps the agent can execute per execution queue."
         }
       }
     }

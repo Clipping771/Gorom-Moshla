@@ -87,8 +87,7 @@ export class FloatingPanel {
                     this._post({ type: 'userMessage', text: msg.text });
                     this._post({ type: 'thinking' });
                     try {
-                        const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath || process.cwd();
-                        socketClient.sendTask(msg.text, workspaceRoot);
+                        await this._orchestrator.run(msg.text, msg.attachments, msg.mode);
                     } catch (err: any) {
                         this._post({ type: 'error', value: String(err?.message || err) });
                     }

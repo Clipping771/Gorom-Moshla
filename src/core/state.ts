@@ -11,12 +11,14 @@ export type Phase =
 
 export interface AIPlanStep {
   tool: string;
+  description?: string;
   args: Record<string, any>;
 }
 
 export interface AIPlan {
   intent: 'edit' | 'create' | 'explain' | 'debug' | 'refactor' | 'plan';
   title?: string;
+  thoughts?: string;
   steps: AIPlanStep[];
   final_response: string;
   plan_details?: string;
